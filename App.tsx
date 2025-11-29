@@ -154,6 +154,12 @@ const App: React.FC = () => {
     }
   };
 
+  const handleQuitGame = () => {
+      if (confirm("确定要返回主界面吗？当前进度已自动保存。")) {
+          setGamePhase('welcome');
+      }
+  };
+
   const enterSelection = () => {
     setGamePhase('selection');
   };
@@ -525,8 +531,17 @@ const App: React.FC = () => {
       {/* Main Game Area */}
       <main className="flex-1 flex flex-col h-[70vh] md:h-screen relative">
         
-        {/* Top Bar for Settings */}
-        <div className="absolute top-4 right-4 z-40">
+        {/* Top Bar Controls */}
+        <div className="absolute top-4 right-4 z-40 flex gap-2">
+             <button 
+                onClick={handleQuitGame}
+                className="p-2 bg-black/50 backdrop-blur rounded-full text-stone-500 hover:text-red-400 border border-stone-700 hover:border-red-400 transition-all"
+                title="返回主页"
+             >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                </svg>
+             </button>
              <button 
                 onClick={() => setIsSettingsOpen(true)}
                 className="p-2 bg-black/50 backdrop-blur rounded-full text-stone-500 hover:text-jade border border-stone-700 hover:border-jade transition-all"
