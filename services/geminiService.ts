@@ -84,8 +84,8 @@ const callAI = async (
                 model: model,
                 messages: messages,
                 temperature: 0.8,
-                // 尝试启用 JSON 模式，大多数现代模型支持
-                response_format: { type: "json_object" },
+                // 移除了 response_format，因为许多模型（包括部分 Gemini 版本和开源模型）不支持 'json_object' 参数
+                // 我们依赖 SYSTEM_INSTRUCTION 来强制 JSON 格式
                 max_tokens: 2000
             })
         });
@@ -151,7 +151,7 @@ export const sendPlayerAction = async (
     action: string, 
     currentState: CharacterState, 
     history: ChatMessage[], 
-    settings: AISettings,
+    settings: AISettings, 
     isHintRequest: boolean = false
 ): Promise<GameResponse> => {
     
