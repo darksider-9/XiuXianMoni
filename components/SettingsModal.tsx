@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { exportSaveToFile, importSaveFromFile, clearSave } from '../services/storageService';
+import { testConnection } from '../services/geminiService';
 import { CharacterState, ChatMessage, AISettings } from '../types';
 
 interface SettingsModalProps {
@@ -41,9 +42,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const [formData, setFormData] = useState<AISettings>(settings);
   const [activeTab, setActiveTab] = useState<'general' | 'data'>('general');
+  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [testMessage, setTestMessage] = useState<string>('');
 
   useEffect(() => {
     setFormData(settings);
+    setTestStatus('idle');
+    setTestMessage('');
   }, [settings, isOpen]);
 
   const handleApplyPreset = (preset: typeof PRESETS[0]) => {
@@ -52,6 +57,19 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           baseUrl: preset.baseUrl,
           model: preset.model
       }));
+      setTestStatus('idle');
+  };
+
+  const handleTestConnection = async () => {
+      setTestStatus('testing');
+      setTestMessage('正在连接...');
+      const result = await testConnection(formData);
+      if (result.success) {
+          setTestStatus('success');
+      } else {
+          setTestStatus('error');
+      }
+      setTestMessage(result.message);
   };
 
   if (!isOpen) return null;
@@ -124,7 +142,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         <input
                             type="text"
                             value={formData.baseUrl}
-                            onChange={(e) => setFormData({...formData, baseUrl: e.target.value})}
+                            onChange={(e) => { setFormData({...formData, baseUrl: e.target.value}); setTestStatus('idle'); }}
                             placeholder="例如: https://api.deepseek.com"
                             className="w-full bg-stone-900 border border-stone-700 rounded p-2 text-stone-200 text-sm focus:border-jade focus:outline-none"
                         />
@@ -135,7 +153,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         <input
                             type="password"
                             value={formData.apiKey}
-                            onChange={(e) => setFormData({...formData, apiKey: e.target.value})}
+                            onChange={(e) => { setFormData({...formData, apiKey: e.target.value}); setTestStatus('idle'); }}
                             placeholder="sk-..."
                             className="w-full bg-stone-900 border border-stone-700 rounded p-2 text-stone-200 text-sm focus:border-jade focus:outline-none"
                         />
@@ -146,11 +164,27 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         <input
                             type="text"
                             value={formData.model}
-                            onChange={(e) => setFormData({...formData, model: e.target.value})}
+                            onChange={(e) => { setFormData({...formData, model: e.target.value}); setTestStatus('idle'); }}
                             placeholder="例如: deepseek-chat, gpt-4o, gemini-2.0-flash"
                             className="w-full bg-stone-900 border border-stone-700 rounded p-2 text-stone-200 text-sm focus:border-jade focus:outline-none"
                         />
                      </div>
+                </div>
+                
+                {/* Test Connection Button */}
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={handleTestConnection}
+                        disabled={!formData.apiKey || testStatus === 'testing'}
+                        className="px-4 py-2 bg-stone-800 border border-stone-600 hover:border-jade text-stone-300 text-xs rounded transition-colors disabled:opacity-50"
+                    >
+                        {testStatus === 'testing' ? '连接中...' : '测试连接'}
+                    </button>
+                    {testStatus !== 'idle' && (
+                        <span className={`text-xs ${testStatus === 'success' ? 'text-green-500' : 'text-red-400'}`}>
+                            {testMessage}
+                        </span>
+                    )}
                 </div>
 
                 <div className="pt-4 mt-4 border-t border-stone-800">
