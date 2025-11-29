@@ -4,6 +4,8 @@ export enum CharacterAttribute {
   WISDOM = '悟性',
   AGILITY = '身法',
   LUCK = '机缘',
+  CHARISMA = '魅力',
+  WILLPOWER = '道心',
 }
 
 export interface EquipmentState {
@@ -14,17 +16,20 @@ export interface EquipmentState {
 
 export interface CharacterState {
   name: string;
-  realm: string; // 境界
-  cultivation: number; // 当前修为
+  realm: string; // 灵道境界 (练气、筑基...)
+  bodyRealm: string; // 肉身境界 (铜皮、铁骨...)
+  cultivation: number; // 当前灵力/修为
   maxCultivation: number; // 突破所需修为
   health: number; // 气血
   maxHealth: number; // 最大气血
+  soul: number; // 神魂/神识强度
+  maxSoul: number; // 神魂上限
   spiritStones: number; // 灵石
   attributes: Record<CharacterAttribute, number>;
-  inventory: string[]; // 背包：材料、丹药、杂物
+  inventory: string[]; // 背包
   equipment: EquipmentState; // 当前装备
-  techniques: string[]; // 修炼的功法/法诀/神通
-  statusEffects: string[]; // 状态：中毒、顿悟、丹毒、阵法庇护等
+  techniques: string[]; // 功法
+  statusEffects: string[]; // 状态
 }
 
 export interface GameResponse {
@@ -36,7 +41,7 @@ export interface GameResponse {
 }
 
 export interface ChatMessage {
-  role: 'user' | 'assistant' | 'system'; // Standard OpenAI roles
+  role: 'user' | 'assistant' | 'system'; 
   content: string;
   isNarrative?: boolean;
 }
@@ -58,8 +63,8 @@ export interface AISettings {
 export interface SaveData {
   character: CharacterState;
   history: ChatMessage[];
-  summary: string; // 长期记忆摘要
-  summarizedCount: number; // 已压缩的消息数量
+  summary: string;
+  summarizedCount: number;
   timestamp: number;
-  settings?: AISettings; // Saved API configuration
+  settings?: AISettings;
 }

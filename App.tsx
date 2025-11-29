@@ -12,16 +12,21 @@ import SettingsModal from './components/SettingsModal';
 const INITIAL_STATE: CharacterState = {
   name: "修仙者",
   realm: "凡人",
+  bodyRealm: "凡胎",
   cultivation: 0,
   maxCultivation: 100,
   health: 100,
   maxHealth: 100,
+  soul: 10,
+  maxSoul: 100,
   spiritStones: 0,
   attributes: {
     [CharacterAttribute.STRENGTH]: 10,
     [CharacterAttribute.WISDOM]: 10,
     [CharacterAttribute.AGILITY]: 10,
     [CharacterAttribute.LUCK]: 10,
+    [CharacterAttribute.CHARISMA]: 5,
+    [CharacterAttribute.WILLPOWER]: 10,
   },
   inventory: [],
   equipment: {
@@ -129,8 +134,6 @@ const App: React.FC = () => {
         if (history.length - summarizedCount >= COMPRESSION_THRESHOLD && !isCompressing && !loading && !gameOver && aiSettings.apiKey) {
             setIsCompressing(true);
             try {
-                // Take the segment that hasn't been summarized yet
-                // But leave the most recent few messages (e.g., 5) to ensure immediate context remains fresh
                 const safetyBuffer = 5;
                 const endIndex = history.length - safetyBuffer;
                 
@@ -167,7 +170,8 @@ const App: React.FC = () => {
   };
 
   const handleImportSuccess = (data: SaveData) => {
-    setCharacter(data.character);
+    // Ensure merged with default state to handle new fields (like bodyRealm) added in updates
+    setCharacter({ ...INITIAL_STATE, ...data.character });
     setHistory(data.history);
     setSummary(data.summary || "");
     setSummarizedCount(data.summarizedCount || 0);
@@ -182,7 +186,12 @@ const App: React.FC = () => {
   const handleContinueGame = () => {
     const savedData = loadGame();
     if (savedData) {
-        setCharacter(savedData.character);
+        // Deep merge with INITIAL_STATE to ensure new fields (soul, bodyRealm) exist if loading old save
+        setCharacter({ 
+            ...INITIAL_STATE, 
+            ...savedData.character,
+            attributes: { ...INITIAL_STATE.attributes, ...savedData.character.attributes }
+        });
         setHistory(savedData.history);
         setSummary(savedData.summary || "");
         setSummarizedCount(savedData.summarizedCount || 0);
@@ -270,6 +279,18 @@ const App: React.FC = () => {
     }
   };
 
+  // Helper to ensure arrays are strings, not objects (fixes React Error #31)
+  const sanitizeStringArray = (arr: any[] | undefined): string[] => {
+      if (!Array.isArray(arr)) return [];
+      return arr.map(item => {
+          if (typeof item === 'string') return item;
+          if (typeof item === 'object' && item !== null) {
+              return item.name || item.label || item.value || JSON.stringify(item);
+          }
+          return String(item);
+      });
+  };
+
   const processResponse = (response: GameResponse) => {
     if (response.eventArtKeyword) {
       setCurrentVisual(response.eventArtKeyword);
@@ -278,18 +299,40 @@ const App: React.FC = () => {
 
     if (response.characterUpdate) {
       setCharacter(prev => {
+        // Deep merge logic
         const updatedEquipment = response.characterUpdate.equipment 
             ? { ...prev.equipment, ...response.characterUpdate.equipment }
             : prev.equipment;
-        return {
+
+        const updatedAttributes = response.characterUpdate.attributes
+            ? { ...prev.attributes, ...response.characterUpdate.attributes }
+            : prev.attributes;
+        
+        const sanitizedUpdate = { ...response.characterUpdate };
+        if (sanitizedUpdate.inventory) sanitizedUpdate.inventory = sanitizeStringArray(sanitizedUpdate.inventory);
+        if (sanitizedUpdate.techniques) sanitizedUpdate.techniques = sanitizeStringArray(sanitizedUpdate.techniques);
+        if (sanitizedUpdate.statusEffects) sanitizedUpdate.statusEffects = sanitizeStringArray(sanitizedUpdate.statusEffects);
+
+        const nextState = {
           ...prev,
-          ...response.characterUpdate,
+          ...sanitizedUpdate,
           equipment: updatedEquipment,
+          attributes: updatedAttributes,
         };
+
+        // Self-healing: ensure max values are at least current values to prevent bar overflow
+        if (nextState.maxHealth < nextState.health) nextState.maxHealth = nextState.health;
+        if (nextState.maxSoul < nextState.soul) nextState.maxSoul = nextState.soul;
+        
+        return nextState;
       });
     }
 
-    setChoices(response.choices || []);
+    const validChoices = Array.isArray(response.choices) 
+        ? sanitizeStringArray(response.choices)
+        : [];
+    setChoices(validChoices);
+
     if (response.gameOver) {
         setGameOver(true);
         clearSave(); 
@@ -379,7 +422,6 @@ const App: React.FC = () => {
   if (gamePhase === 'selection') {
     return (
       <div className="min-h-screen bg-ink-black flex flex-col items-center justify-center text-stone-300 p-4 font-serif">
-         {/* Custom Origin Modal */}
          {showCustomOriginInput && (
              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4">
                  <div className="w-full max-w-lg bg-stone-900 border border-jade p-6 rounded">
@@ -405,27 +447,32 @@ const App: React.FC = () => {
          </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl w-full overflow-y-auto max-h-[80vh] p-2 custom-scrollbar">
-          {START_LOCATIONS.map((loc) => (
-             <button
-                key={loc.id}
-                onClick={() => handleStartGame(loc)}
-                className={`text-left p-6 border transition-all duration-300 rounded group relative overflow-hidden flex flex-col h-full
-                    ${loc.type === 'custom' ? 'bg-stone-900/30 border-dashed border-stone-600 hover:border-jade hover:bg-stone-800' : 'bg-stone-900/50 border-stone-800 hover:border-jade hover:bg-stone-800'}
-                `}
-             >
-               <div className="absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-20">
-                  <span className="text-6xl font-serif text-jade">{loc.type === 'custom' ? '?' : loc.name.charAt(0)}</span>
-               </div>
-               <div className="flex justify-between items-center mb-2 relative z-10 w-full">
-                 <h3 className="text-xl font-bold text-stone-200 group-hover:text-jade-light transition-colors">{loc.name}</h3>
-                 <span className={`text-xs border px-2 py-1 rounded uppercase ${loc.type === 'custom' ? 'border-jade text-jade' : 'border-stone-700 text-stone-500'}`}>{loc.type}</span>
-               </div>
-               <p className="text-sm text-stone-400 mb-4 leading-relaxed relative z-10 min-h-[40px] flex-grow">{loc.description}</p>
-               <div className="text-xs text-jade/80 bg-jade/10 p-3 rounded border border-jade/20 relative z-10 w-full">
-                 <span className="font-bold">初始机缘：</span> {loc.bonus}
-               </div>
-             </button>
-          ))}
+          {START_LOCATIONS.map((loc) => {
+             const typeClass = loc.type === 'custom' ? 'border-jade text-jade' : 'border-stone-700 text-stone-500';
+             const cardClass = loc.type === 'custom' 
+                ? 'bg-stone-900/30 border-dashed border-stone-600 hover:border-jade hover:bg-stone-800' 
+                : 'bg-stone-900/50 border-stone-800 hover:border-jade hover:bg-stone-800';
+
+             return (
+                 <button
+                    key={loc.id}
+                    onClick={() => handleStartGame(loc)}
+                    className={`text-left p-6 border transition-all duration-300 rounded group relative overflow-hidden flex flex-col h-full ${cardClass}`}
+                 >
+                   <div className="absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-20">
+                      <span className="text-6xl font-serif text-jade">{loc.type === 'custom' ? '?' : loc.name.charAt(0)}</span>
+                   </div>
+                   <div className="flex justify-between items-center mb-2 relative z-10 w-full">
+                     <h3 className="text-xl font-bold text-stone-200 group-hover:text-jade-light transition-colors">{loc.name}</h3>
+                     <span className={`text-xs border px-2 py-1 rounded uppercase ${typeClass}`}>{loc.type}</span>
+                   </div>
+                   <p className="text-sm text-stone-400 mb-4 leading-relaxed relative z-10 min-h-[40px] flex-grow">{loc.description}</p>
+                   <div className="text-xs text-jade/80 bg-jade/10 p-3 rounded border border-jade/20 relative z-10 w-full">
+                     <span className="font-bold">初始机缘：</span> {loc.bonus}
+                   </div>
+                 </button>
+             );
+          })}
         </div>
       </div>
     );
@@ -458,42 +505,55 @@ const App: React.FC = () => {
                  </div>
             </div>
           <h2 className="text-xl font-serif text-stone-100 tracking-wide">{character.name}</h2>
-          <div className="text-xs text-jade-light font-medium tracking-widest mt-1 border border-jade/30 inline-block px-2 py-0.5 rounded bg-jade/5">
-            {character.realm}
+          
+          <div className="flex justify-center gap-2 mt-2">
+              <div className="text-xs text-jade-light font-medium tracking-widest px-2 py-0.5 rounded bg-jade/5 border border-jade/30">
+                {character.realm}
+              </div>
+              <div className="text-xs text-amber-500 font-medium tracking-widest px-2 py-0.5 rounded bg-amber-900/10 border border-amber-800/30">
+                {character.bodyRealm || "凡胎"}
+              </div>
           </div>
         </div>
 
         <div className="space-y-6">
-          {/* Attributes */}
-          <div className="grid grid-cols-2 gap-2 text-xs mb-4 p-2 bg-stone-900 rounded border border-stone-800">
-             {Object.entries(character.attributes).map(([key, val]) => (
-                <div key={key} className="flex justify-between text-stone-400 px-1">
-                   <span>{key}</span>
-                   <span className="text-stone-200">{val}</span>
-                </div>
-             ))}
-          </div>
-
           {/* Vitals */}
           <div>
             <StatBar 
-                label="气血" 
+                label="精 (气血)" 
                 value={character.health} 
                 max={character.maxHealth} 
                 colorClass="bg-red-900/80" 
                 icon={<span className="text-red-500 mr-1">♥</span>}
             />
              <StatBar 
-                label="修为" 
+                label="气 (灵力)" 
                 value={character.cultivation} 
                 max={character.maxCultivation} 
                 colorClass="bg-jade/80"
                 icon={<span className="text-jade mr-1">✦</span>}
             />
+             <StatBar 
+                label="神 (神识)" 
+                value={character.soul || 10} 
+                max={character.maxSoul || 100} 
+                colorClass="bg-purple-600/80"
+                icon={<span className="text-purple-400 mr-1">◎</span>}
+            />
              <div className="flex justify-between items-center mt-2 px-1">
                 <span className="text-xs text-stone-500">灵石</span>
                 <span className="text-gold-dim font-serif font-bold text-sm">{character.spiritStones}</span>
              </div>
+          </div>
+
+          {/* Attributes */}
+          <div className="grid grid-cols-2 gap-2 text-xs mb-4 p-2 bg-stone-900 rounded border border-stone-800">
+             {Object.entries(character.attributes).map(([key, val]) => (
+                <div key={key} className="flex justify-between text-stone-400 px-1 border-b border-stone-800/50 pb-1">
+                   <span>{key}</span>
+                   <span className="text-stone-200">{val}</span>
+                </div>
+             ))}
           </div>
 
           {/* Equipment */}
