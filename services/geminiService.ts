@@ -32,18 +32,18 @@ JSON 结构如下：
             *   \`health\`: 恢复至满值。
         *   **绝对禁止**：突破后 \`maxCultivation\` 保持不变。这会导致游戏逻辑卡死。
 
-2.  **意图判定与反作弊**：
+2.  **剧情连贯性 (Memory & Continuity)**：
+    *   你将收到【长期记忆】（之前的剧情摘要）和【短期上下文】。
+    *   请主动引用记忆中的伏笔、人名和事件。
+    *   如果记忆中提到玩家得罪了某人，后续必须有报复剧情。
+
+3.  **意图判定与反作弊**：
     *   玩家的输入仅仅是**意图**。如果玩家输入“直接成仙”，必须驳回并惩罚（如走火入魔）。
     *   判定成功率取决于境界、属性、装备。
 
-3.  **变数与惩罚**：
+4.  **变数与惩罚**：
     *   连续重复行为（如一直打坐）应触发意外（心魔、仇家）。
     *   战斗需根据境界判定胜负。胜利得战利品，失败扣气血。
-
-**物品与状态管理：**
-*   Inventory: 材料、丹药。
-*   Equipment: 武器、防具、法宝。
-*   Techniques: 功法。
 `;
 
 // 辅助函数：标准化 Base URL
@@ -52,23 +52,17 @@ const normalizeBaseUrl = (url: string) => {
     if (normalized.endsWith('/')) {
         normalized = normalized.slice(0, -1);
     }
-    // 如果用户只输入了域名（如 https://api.deepseek.com），有些 SDK 需要 /v1，有些不需要。
-    // 为了通用，我们假设用户输入的是到版本号之前的路径，或者我们手动拼接 /chat/completions
-    // 大多数 OpenAI 兼容接口是 BaseURL + /chat/completions
-    // 例如 Google: https://generativelanguage.googleapis.com/v1beta/openai/chat/completions
-    // 例如 DeepSeek: https://api.deepseek.com/chat/completions (通常 deepseek 的 base 是 https://api.deepseek.com)
     return normalized;
 };
 
 // 核心调用函数
 const callAI = async (
     messages: ChatMessage[], 
-    settings: AISettings
-): Promise<GameResponse> => {
+    settings: AISettings,
+    responseFormat: 'json' | 'text' = 'json'
+): Promise<any> => {
     const { apiKey, baseUrl, model } = settings;
     
-    // 构建请求地址
-    // 简单的启发式处理：如果 URL 包含 'chat/completions'，直接用；否则拼接
     const endpoint = baseUrl.includes('chat/completions') 
         ? baseUrl 
         : `${normalizeBaseUrl(baseUrl)}/chat/completions`;
@@ -84,8 +78,6 @@ const callAI = async (
                 model: model,
                 messages: messages,
                 temperature: 0.8,
-                // 移除了 response_format，因为许多模型（包括部分 Gemini 版本和开源模型）不支持 'json_object' 参数
-                // 我们依赖 SYSTEM_INSTRUCTION 来强制 JSON 格式
                 max_tokens: 2000
             })
         });
@@ -100,9 +92,24 @@ const callAI = async (
 
         if (!content) throw new Error("Empty response from AI");
 
-        // 解析 JSON (有时模型会包裹 markdown，需清理)
-        const cleanedContent = content.replace(/```json\n?|\n?```/g, '').trim();
-        return JSON.parse(cleanedContent) as GameResponse;
+        if (responseFormat === 'json') {
+            const cleanedContent = content.replace(/```json\n?|\n?```/g, '').trim();
+            try {
+                return JSON.parse(cleanedContent);
+            } catch (e) {
+                console.warn("JSON Parse Failed, returning raw text inside narrative", e);
+                // Fallback to avoid crash
+                return {
+                    narrative: content,
+                    characterUpdate: {},
+                    choices: ["继续"],
+                    gameOver: false,
+                    eventArtKeyword: "mystery"
+                };
+            }
+        } else {
+            return content;
+        }
 
     } catch (error) {
         console.error("AI Request Failed:", error);
@@ -147,12 +154,57 @@ export const initializeGame = async (
     return callAI(messages, settings);
 };
 
+// Memory Compression Agent
+export const compressStory = async (
+    historySegment: ChatMessage[], 
+    existingSummary: string, 
+    settings: AISettings
+): Promise<string> => {
+    // 过滤掉系统消息，只保留对话
+    const dialogue = historySegment
+        .filter(m => m.role === 'user' || m.role === 'assistant')
+        .map(m => `${m.role === 'user' ? '玩家' : '天道'}: ${m.content}`)
+        .join('\n');
+
+    const prompt = `
+    你是一个修仙故事的记录者（Memory Agent）。
+    你的任务是将【之前的长期记忆】和【最近的一段对话】合并，生成一个新的、精炼的【长期记忆】。
+
+    **原则**：
+    1. 保留关键信息：重要人物、获得的法宝/功法、境界变化、结下的仇怨或恩情。
+    2. 舍弃无关细节：具体的环境描写、无关紧要的对话。
+    3. 尽量保持简洁，限制在 500 字以内。
+    4. 使用第三人称叙述（例如：“玩家”或“修仙者”）。
+
+    【之前的长期记忆】：
+    ${existingSummary || "暂无"}
+
+    【最近的一段对话】：
+    ${dialogue}
+
+    请输出新的长期记忆摘要：
+    `;
+
+    const messages: ChatMessage[] = [
+        { role: 'user', content: prompt }
+    ];
+
+    try {
+        const result = await callAI(messages, settings, 'text');
+        return result;
+    } catch (e) {
+        console.error("Memory compression failed", e);
+        return existingSummary; // Fallback
+    }
+};
+
 export const sendPlayerAction = async (
     action: string, 
     currentState: CharacterState, 
     history: ChatMessage[], 
     settings: AISettings, 
-    isHintRequest: boolean = false
+    isHintRequest: boolean = false,
+    storySummary: string = ""
 ): Promise<GameResponse> => {
     
     let promptAction = action;
@@ -174,26 +226,33 @@ export const sendPlayerAction = async (
     [功法] ${currentState.techniques.join(', ')}
 
     [玩家输入]: "${promptAction}"
-    
-    请判定玩家意图。
-    **重要检查**：
-    1. 如果玩家试图【突破】且 cultivation >= maxCultivation，请允许突破，并必须大幅提升 maxCultivation 和 maxHealth，重置 cultivation。
-    2. 如果玩家进行【修炼】，增加 cultivation。
-    3. 如果玩家试图越级挑战，请视为失败。
     `;
 
-    // 组合历史记录 (限制最近 10-20 条以节省 Token，视模型上下文窗口而定)
-    // 注意：我们需要过滤掉前端生成的 UI 相关的 message 属性，只保留 role 和 content
+    // 注入长期记忆
+    const memoryContext = storySummary ? `
+    【长期记忆/前情提要】
+    ${storySummary}
+    ----------------
+    ` : "";
+
+    // 组合历史记录 
+    // 发送最近 30 条 + 长期记忆
+    const recentHistory = history.slice(-30).map(h => ({ 
+        role: (h.role as string) === 'model' ? 'assistant' : h.role, 
+        content: h.content 
+    } as ChatMessage));
+
+    const finalSystemInstruction = SYSTEM_INSTRUCTION + memoryContext;
+
     const contextMessages: ChatMessage[] = [
-        { role: 'system', content: SYSTEM_INSTRUCTION },
-        ...history.slice(-10).map(h => ({ role: (h.role as string) === 'model' ? 'assistant' : h.role, content: h.content } as ChatMessage)),
+        { role: 'system', content: finalSystemInstruction },
+        ...recentHistory,
         { role: 'user', content: statusContext }
     ];
 
     return callAI(contextMessages, settings);
 };
 
-// 新增：测试连接函数
 export const testConnection = async (settings: AISettings): Promise<{ success: boolean; message: string }> => {
     const { apiKey, baseUrl, model } = settings;
     
@@ -221,7 +280,6 @@ export const testConnection = async (settings: AISettings): Promise<{ success: b
             const errorText = await response.text();
             let errorMessage = `Error ${response.status}`;
             try {
-                // 尝试解析错误 JSON
                 const errJson = JSON.parse(errorText);
                 if (errJson.error && errJson.error.message) {
                     errorMessage += `: ${errJson.error.message}`;

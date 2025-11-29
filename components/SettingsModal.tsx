@@ -12,6 +12,8 @@ interface SettingsModalProps {
   character: CharacterState;
   history: ChatMessage[];
   onImportSuccess: (data: any) => void;
+  summary: string;
+  summarizedCount: number;
 }
 
 const PRESETS = [
@@ -38,7 +40,7 @@ const PRESETS = [
 ];
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ 
-  isOpen, onClose, settings, onSaveSettings, character, history, onImportSuccess 
+  isOpen, onClose, settings, onSaveSettings, character, history, onImportSuccess, summary, summarizedCount 
 }) => {
   const [formData, setFormData] = useState<AISettings>(settings);
   const [activeTab, setActiveTab] = useState<'general' | 'data'>('general');
@@ -212,7 +214,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     <h4 className="text-stone-300 text-sm font-bold mb-2">导出存档</h4>
                     <p className="text-xs text-stone-500 mb-3">下载当前的修仙进度到本地文件（包含当前 API 设置）。</p>
                     <button 
-                        onClick={() => exportSaveToFile(character, history, settings)}
+                        onClick={() => exportSaveToFile(character, history, settings, summary, summarizedCount)}
                         className="w-full py-2 bg-stone-800 border border-stone-600 hover:border-jade text-stone-300 rounded text-sm transition-colors"
                     >
                         下载存档 (.json)

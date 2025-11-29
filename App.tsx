@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { initializeGame, sendPlayerAction } from './services/geminiService';
+import { initializeGame, sendPlayerAction, compressStory } from './services/geminiService';
 import { saveGame, loadGame, loadSettings, saveSettings, clearSave } from './services/storageService';
 import { CharacterState, GameResponse, ChatMessage, CharacterAttribute, StartLocation, SaveData, AISettings } from './types';
 import StatBar from './components/StatBar';
@@ -72,6 +72,8 @@ const START_LOCATIONS: StartLocation[] = [
   }
 ];
 
+const COMPRESSION_THRESHOLD = 20; // Every 20 messages, trigger compression
+
 const App: React.FC = () => {
   const [character, setCharacter] = useState<CharacterState>(INITIAL_STATE);
   const [history, setHistory] = useState<ChatMessage[]>([]);
@@ -79,6 +81,11 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [input, setInput] = useState<string>('');
   
+  // Memory System
+  const [summary, setSummary] = useState<string>("");
+  const [summarizedCount, setSummarizedCount] = useState<number>(0);
+  const [isCompressing, setIsCompressing] = useState<boolean>(false);
+
   // Settings State
   const [aiSettings, setAiSettings] = useState<AISettings>({
       apiKey: '',
@@ -98,29 +105,56 @@ const App: React.FC = () => {
   const [currentVisual, setCurrentVisual] = useState<string>("Chinese misty mountains");
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Initialize: Load Settings and Save Data
+  // Initialize
   useEffect(() => {
-    // Load Settings
     const storedSettings = loadSettings();
     if (storedSettings) {
         setAiSettings(storedSettings);
     } else if (process.env.API_KEY) {
-        // Fallback for environment variable if no local settings
         setAiSettings(prev => ({ ...prev, apiKey: process.env.API_KEY || '' }));
     }
-
-    // Check for saved game
-    // We don't auto-load the game state into view, but we check if it exists to show "Continue"
   }, []);
 
-  // Auto-save when state changes
+  // Auto-save
   useEffect(() => {
     if (gamePhase === 'playing' && !loading && !gameOver) {
-        saveGame(character, history, aiSettings);
+        saveGame(character, history, aiSettings, summary, summarizedCount);
     }
-  }, [character, history, gamePhase, loading, gameOver, aiSettings]);
+  }, [character, history, gamePhase, loading, gameOver, aiSettings, summary, summarizedCount]);
 
-  // Auto-scroll to bottom of chat
+  // Memory Compression Agent Trigger
+  useEffect(() => {
+    const runCompression = async () => {
+        // Only run if we have accumulated enough new messages since last summary
+        if (history.length - summarizedCount >= COMPRESSION_THRESHOLD && !isCompressing && !loading && !gameOver && aiSettings.apiKey) {
+            setIsCompressing(true);
+            try {
+                // Take the segment that hasn't been summarized yet
+                // But leave the most recent few messages (e.g., 5) to ensure immediate context remains fresh
+                const safetyBuffer = 5;
+                const endIndex = history.length - safetyBuffer;
+                
+                if (endIndex > summarizedCount) {
+                    const segmentToCompress = history.slice(summarizedCount, endIndex);
+                    const newSummary = await compressStory(segmentToCompress, summary, aiSettings);
+                    
+                    setSummary(newSummary);
+                    setSummarizedCount(endIndex);
+                    console.log("Memory compressed successfully.");
+                }
+            } catch (err) {
+                console.error("Memory compression failed:", err);
+            } finally {
+                setIsCompressing(false);
+            }
+        }
+    };
+
+    runCompression();
+  }, [history, summarizedCount, isCompressing, loading, gameOver, aiSettings, summary]);
+
+
+  // Auto-scroll
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -135,6 +169,9 @@ const App: React.FC = () => {
   const handleImportSuccess = (data: SaveData) => {
     setCharacter(data.character);
     setHistory(data.history);
+    setSummary(data.summary || "");
+    setSummarizedCount(data.summarizedCount || 0);
+    
     if (data.settings) {
         setAiSettings(data.settings);
         saveSettings(data.settings);
@@ -147,6 +184,9 @@ const App: React.FC = () => {
     if (savedData) {
         setCharacter(savedData.character);
         setHistory(savedData.history);
+        setSummary(savedData.summary || "");
+        setSummarizedCount(savedData.summarizedCount || 0);
+        
         if (savedData.settings) {
             setAiSettings(savedData.settings);
         }
@@ -169,7 +209,6 @@ const App: React.FC = () => {
         setShowCustomOriginInput(true);
         return;
     }
-
     await startGameLogic(location.name, location.bonus);
   };
 
@@ -189,8 +228,10 @@ const App: React.FC = () => {
     setLoading(true);
     setGamePhase('playing');
     setHistory([{ role: 'system', content: `正在降临... 开启你的修仙命途...` }]);
+    setSummary("");
+    setSummarizedCount(0);
     setShowTutorial(true); 
-    setCharacter(INITIAL_STATE); // Reset char for new game
+    setCharacter(INITIAL_STATE); 
 
     try {
       const response = await initializeGame(locName, locBonus, aiSettings, customPrompt);
@@ -219,8 +260,7 @@ const App: React.FC = () => {
     setLoading(true);
 
     try {
-      // Pass full history to service
-      const response = await sendPlayerAction(action, character, history, aiSettings, isHint);
+      const response = await sendPlayerAction(action, character, history, aiSettings, isHint, summary);
       processResponse(response);
     } catch (error) {
       console.error(error);
@@ -234,22 +274,13 @@ const App: React.FC = () => {
     if (response.eventArtKeyword) {
       setCurrentVisual(response.eventArtKeyword);
     }
-
-    // Role mapping for display: 'assistant' -> 'model' internal type logic for consistency
-    // But our types now use 'assistant'. Let's keep UI consistent with types.
-    // The GameResponse doesn't return role, we add it.
-    // NOTE: services now return 'narrative' string, which we display as assistant message.
-    
     setHistory(prev => [...prev, { role: 'assistant', content: response.narrative, isNarrative: true }]);
 
     if (response.characterUpdate) {
       setCharacter(prev => {
-        // Deep merge equipment
         const updatedEquipment = response.characterUpdate.equipment 
             ? { ...prev.equipment, ...response.characterUpdate.equipment }
             : prev.equipment;
-        
-        // Merge Logic
         return {
           ...prev,
           ...response.characterUpdate,
@@ -261,7 +292,7 @@ const App: React.FC = () => {
     setChoices(response.choices || []);
     if (response.gameOver) {
         setGameOver(true);
-        clearSave(); // Clear save on death
+        clearSave(); 
     }
     setLoading(false);
   };
@@ -301,6 +332,8 @@ const App: React.FC = () => {
             character={character}
             history={history}
             onImportSuccess={handleImportSuccess}
+            summary={summary}
+            summarizedCount={summarizedCount}
         />
 
         <div className="z-10 text-center max-w-lg px-4 animate-fade-in">
@@ -412,6 +445,8 @@ const App: React.FC = () => {
             character={character}
             history={history}
             onImportSuccess={handleImportSuccess}
+            summary={summary}
+            summarizedCount={summarizedCount}
       />
 
       {/* Sidebar */}
@@ -614,6 +649,13 @@ const App: React.FC = () => {
         {/* Input Area */}
         <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a] to-transparent pt-12 pb-6 px-4 md:px-8 z-30">
           <div className="max-w-3xl mx-auto">
+            {/* Memory Compression Indicator */}
+            {isCompressing && (
+                <div className="absolute right-4 top-0 text-[10px] text-jade/50 flex items-center gap-1 animate-pulse">
+                    <span>🧠</span> 记忆整理中...
+                </div>
+            )}
+
             {/* Suggested Choices */}
             {!loading && !gameOver && choices.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-4 justify-center md:justify-start">

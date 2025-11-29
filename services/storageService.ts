@@ -11,11 +11,19 @@ const DEFAULT_SETTINGS: AISettings = {
   model: 'gemini-2.0-flash',
 };
 
-export const saveGame = (character: CharacterState, history: ChatMessage[], settings?: AISettings) => {
+export const saveGame = (
+  character: CharacterState, 
+  history: ChatMessage[], 
+  settings?: AISettings,
+  summary: string = "",
+  summarizedCount: number = 0
+) => {
   try {
     const data: SaveData = {
       character,
       history,
+      summary,
+      summarizedCount,
       timestamp: Date.now(),
       settings
     };
@@ -64,8 +72,21 @@ export const loadSettings = (): AISettings => {
 };
 
 // 导出存档为 JSON 文件
-export const exportSaveToFile = (character: CharacterState, history: ChatMessage[], settings: AISettings) => {
-  const data: SaveData = { character, history, timestamp: Date.now(), settings };
+export const exportSaveToFile = (
+  character: CharacterState, 
+  history: ChatMessage[], 
+  settings: AISettings,
+  summary: string,
+  summarizedCount: number
+) => {
+  const data: SaveData = { 
+    character, 
+    history, 
+    timestamp: Date.now(), 
+    settings,
+    summary,
+    summarizedCount
+  };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   
@@ -91,7 +112,14 @@ export const importSaveFromFile = (file: File): Promise<SaveData> => {
             throw new Error("Invalid save file format");
         }
         // Save immediately to local storage
-        saveGame(data.character, data.history, data.settings);
+        saveGame(
+            data.character, 
+            data.history, 
+            data.settings, 
+            data.summary || "", 
+            data.summarizedCount || 0
+        );
+        
         if (data.settings) {
             saveSettings(data.settings);
         }

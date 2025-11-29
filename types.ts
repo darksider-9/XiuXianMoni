@@ -58,6 +58,8 @@ export interface AISettings {
 export interface SaveData {
   character: CharacterState;
   history: ChatMessage[];
+  summary: string; // 长期记忆摘要
+  summarizedCount: number; // 已压缩的消息数量
   timestamp: number;
   settings?: AISettings; // Saved API configuration
 }
