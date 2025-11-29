@@ -192,3 +192,50 @@ export const sendPlayerAction = async (
 
     return callAI(contextMessages, settings);
 };
+
+// 新增：测试连接函数
+export const testConnection = async (settings: AISettings): Promise<{ success: boolean; message: string }> => {
+    const { apiKey, baseUrl, model } = settings;
+    
+    if (!apiKey) return { success: false, message: "API Key 不能为空" };
+
+    const endpoint = baseUrl.includes('chat/completions') 
+        ? baseUrl 
+        : `${normalizeBaseUrl(baseUrl)}/chat/completions`;
+
+    try {
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                model: model,
+                messages: [{ role: 'user', content: 'Say "OK"' }],
+                max_tokens: 5
+            })
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            let errorMessage = `Error ${response.status}`;
+            try {
+                // 尝试解析错误 JSON
+                const errJson = JSON.parse(errorText);
+                if (errJson.error && errJson.error.message) {
+                    errorMessage += `: ${errJson.error.message}`;
+                } else {
+                    errorMessage += `: ${errorText.slice(0, 100)}`;
+                }
+            } catch {
+                errorMessage += `: ${errorText.slice(0, 100)}`;
+            }
+            return { success: false, message: errorMessage };
+        }
+
+        return { success: true, message: "连接成功！接口工作正常。" };
+    } catch (error) {
+        return { success: false, message: error instanceof Error ? error.message : "网络连接失败" };
+    }
+};
