@@ -39,11 +39,12 @@ const SYSTEM_INSTRUCTION = `
 1.  **资源变动**: 战斗是否扣了气血(\`health\`)？施法是否扣了灵力(\`mana\`)？探索是否扣了神识(\`soul\`)？
 2.  **进度积累**: 修炼/战斗是否增加了修为(\`cultivation\`)或肉身经验(\`bodyPractice\`)？
 3.  **属性判定**: 根骨/悟性/机缘/魅力/道心 是否因事件变化？
-4.  **外物**: 灵石、背包、装备变动。
+4.  **外物**: 灵石、背包、装备、功法变动。
 
 **【输出格式要求】 (JSON ONLY)**
 *   NO Markdown. NO Preamble.
 *   转义换行符 (\\n)。
+*   **attributes**: 仅允许更新以下字段: 根骨, 悟性, 身法, 机缘, 魅力, 道心. 不要创造新的属性名。
 
 JSON 结构示例：
 {
@@ -51,6 +52,9 @@ JSON 结构示例：
   "characterUpdate": { 
      "health": 90, "mana": 40, "soul": 45,
      "cultivation": 1200, "bodyPractice": 300,
+     "attributes": { "根骨": 12, "道心": 15 },
+     "equipment": { "weapon": "青云剑", "armor": "玄铁甲", "relic": "摄魂铃" },
+     "techniques": ["引气诀", "烈火掌"],
      "itemKnowledge": {
         "青干剑": { 
             "name": "青干剑", "type": "weapon", "rank": "黄阶上品", 
@@ -284,7 +288,7 @@ export const sendPlayerAction = async (
     
     let promptAction = action;
     if (isHintRequest) {
-        promptAction = `[SYSTEM: 请求提示。请根据境界(${currentState.realm})给予指引。]`;
+        promptAction = `[SYSTEM: 玩家请求“天机”指引。请分析当前局势，根据主角的境界、状态和性格，推演未来，并给出 1-3 个最优的行动建议。请以“直觉”或“内心独白”的口吻回复，不要直接推进剧情。]`;
     } else if (isIdentifyRequest) {
         promptAction = `[SYSTEM: 请求鉴定物品 "${action}"。请消耗少量神识，并返回该物品的 itemKnowledge 详情（rank, effects, description, requirements）。]`;
     }

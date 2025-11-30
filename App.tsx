@@ -89,6 +89,9 @@ const START_LOCATIONS: StartLocation[] = [
 
 const COMPRESSION_THRESHOLD = 20;
 
+// Whitelist for attributes to prevent AI hallucinations
+const ALLOWED_ATTRIBUTES = Object.values(CharacterAttribute);
+
 const App: React.FC = () => {
   const [character, setCharacter] = useState<CharacterState>(INITIAL_STATE);
   const [history, setHistory] = useState<ChatMessage[]>([]);
@@ -298,8 +301,18 @@ const App: React.FC = () => {
         
         // Deep merge objects
         const updatedEquipment = update.equipment ? { ...prev.equipment, ...update.equipment } : prev.equipment;
-        const updatedAttributes = update.attributes ? { ...prev.attributes, ...update.attributes } : prev.attributes;
         const updatedKnowledge = update.itemKnowledge ? { ...prev.itemKnowledge, ...update.itemKnowledge } : prev.itemKnowledge;
+        
+        // Clean & Filter Attributes
+        const currentAttributes = { ...prev.attributes };
+        if (update.attributes) {
+            Object.entries(update.attributes).forEach(([key, val]) => {
+                // Strict whitelist check using Chinese enum values
+                if (ALLOWED_ATTRIBUTES.includes(key as CharacterAttribute)) {
+                    currentAttributes[key as CharacterAttribute] = val as number;
+                }
+            });
+        }
         
         const sanitizedUpdate = { ...update };
         if (sanitizedUpdate.inventory) sanitizedUpdate.inventory = sanitizeStringArray(sanitizedUpdate.inventory);
@@ -310,7 +323,7 @@ const App: React.FC = () => {
           ...prev,
           ...sanitizedUpdate,
           equipment: updatedEquipment,
-          attributes: updatedAttributes,
+          attributes: currentAttributes,
           itemKnowledge: updatedKnowledge,
         };
 
@@ -337,10 +350,6 @@ const App: React.FC = () => {
 
   // --- RENDER ---
   if (gamePhase === 'welcome' || gamePhase === 'selection') {
-      // (Simplified reuse of existing logic for brevity - keeping Phase 1 & 2 UI consistent with previous version)
-      // Note: In full implementation, ensure Phase 1/2 render code is present. 
-      // For this XML block, I will assume the previous Welcome/Selection UI is maintained but updated with correct state handling.
-      // Retaining standard welcome screen...
       return (
         <div className="min-h-screen bg-ink-black flex flex-col items-center justify-center text-stone-300 relative overflow-hidden font-serif">
             <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] opacity-20"></div>
@@ -480,11 +489,40 @@ const App: React.FC = () => {
              </div>
         </div>
 
+        {/* Equipment Panel (New) */}
+        <div className="border-t border-stone-800/50 pt-4">
+             <h3 className="text-[10px] uppercase text-stone-500 tracking-widest mb-2 font-bold">装备 (Equipment)</h3>
+             <div className="space-y-2 text-xs">
+                 <div className="flex justify-between items-center bg-stone-900/50 p-2 rounded border border-stone-800">
+                     <span className="text-stone-500">兵</span>
+                     <span className="text-stone-300 font-serif">{character.equipment.weapon}</span>
+                 </div>
+                 <div className="flex justify-between items-center bg-stone-900/50 p-2 rounded border border-stone-800">
+                     <span className="text-stone-500">甲</span>
+                     <span className="text-stone-300 font-serif">{character.equipment.armor}</span>
+                 </div>
+                 <div className="flex justify-between items-center bg-stone-900/50 p-2 rounded border border-stone-800">
+                     <span className="text-stone-500">宝</span>
+                     <span className="text-stone-300 font-serif">{character.equipment.relic}</span>
+                 </div>
+             </div>
+        </div>
+
+        {/* Techniques Panel (New) */}
+        <div className="border-t border-stone-800/50 pt-4">
+             <h3 className="text-[10px] uppercase text-stone-500 tracking-widest mb-2 font-bold">功法 (Techniques)</h3>
+             <div className="flex flex-wrap gap-1">
+                 {character.techniques.length === 0 ? <span className="text-xs text-stone-600 italic px-1">暂无感悟</span> : character.techniques.map((t, i) => (
+                     <span key={i} className="px-2 py-1 bg-stone-900 border border-stone-800 text-stone-300 text-[10px] rounded hover:border-jade cursor-default">{t}</span>
+                 ))}
+             </div>
+        </div>
+
         {/* Inventory */}
-        <div className="flex-1 min-h-0 flex flex-col">
+        <div className="flex-1 min-h-[100px] flex flex-col border-t border-stone-800/50 pt-4">
             <h3 className="text-[10px] uppercase text-stone-500 tracking-widest mb-2 font-bold">储物袋 (Inventory)</h3>
             <div className="flex flex-wrap gap-2 overflow-y-auto custom-scrollbar content-start">
-                {character.inventory.length === 0 ? <span className="text-xs text-stone-600">空</span> : character.inventory.map((item, idx) => (
+                {character.inventory.length === 0 ? <span className="text-xs text-stone-600 italic px-1">空</span> : character.inventory.map((item, idx) => (
                     <button 
                         key={idx} 
                         onClick={() => setSelectedItem(item)}
@@ -495,15 +533,19 @@ const App: React.FC = () => {
                 ))}
             </div>
         </div>
+
+        {/* Quit Button (Moved to bottom) */}
+        <div className="mt-auto border-t border-stone-800 pt-4">
+             <button onClick={handleQuitGame} className="w-full flex items-center justify-center gap-2 py-2 border border-stone-700 hover:border-red-900 hover:bg-red-900/10 text-stone-500 hover:text-red-500 rounded transition-colors text-xs">
+                <span>🚪</span> 退出当前游戏
+             </button>
+        </div>
       </aside>
 
       {/* Main Area */}
       <main className="flex-1 flex flex-col h-[65vh] md:h-screen relative">
         <div className="absolute top-4 right-4 z-40 flex gap-2">
-             <button onClick={handleQuitGame} className="p-2 bg-black/50 backdrop-blur rounded-full text-stone-500 hover:text-red-400 border border-stone-700">
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-             </button>
-             <button onClick={() => setIsSettingsOpen(true)} className="p-2 bg-black/50 backdrop-blur rounded-full text-stone-500 hover:text-jade border border-stone-700">
+             <button onClick={() => setIsSettingsOpen(true)} className="p-2 bg-black/50 backdrop-blur rounded-full text-stone-500 hover:text-jade border border-stone-700" title="设置">
                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
              </button>
         </div>
@@ -530,15 +572,25 @@ const App: React.FC = () => {
                     ))}
                  </div>
              )}
-             <div className="relative group">
-                <input 
-                    type="text" value={input} onChange={e => setInput(e.target.value)} 
-                    onKeyDown={e => e.key === 'Enter' && input.trim() && handleAction(input)}
+             <div className="relative group flex gap-2">
+                <div className="relative flex-1">
+                    <input 
+                        type="text" value={input} onChange={e => setInput(e.target.value)} 
+                        onKeyDown={e => e.key === 'Enter' && input.trim() && handleAction(input)}
+                        disabled={loading || gameOver}
+                        placeholder="道友意欲何为？" 
+                        className="w-full bg-[#111] border border-stone-700 text-stone-200 p-4 pr-12 rounded focus:border-jade focus:ring-1 focus:ring-jade transition-all shadow-2xl font-serif"
+                    />
+                    <button onClick={() => input.trim() && handleAction(input)} disabled={loading || !input.trim() || gameOver} className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-stone-500 hover:text-jade">➤</button>
+                </div>
+                <button 
+                    onClick={() => handleAction("", true)}
                     disabled={loading || gameOver}
-                    placeholder="道友意欲何为？" 
-                    className="w-full bg-[#111] border border-stone-700 text-stone-200 p-4 pr-12 rounded focus:border-jade focus:ring-1 focus:ring-jade transition-all shadow-2xl font-serif"
-                />
-                <button onClick={() => input.trim() && handleAction(input)} disabled={loading || !input.trim() || gameOver} className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-stone-500 hover:text-jade">➤</button>
+                    className="px-4 bg-[#111] border border-stone-700 hover:border-purple-500 text-purple-500 rounded transition-all shadow-2xl font-serif whitespace-nowrap flex items-center gap-1"
+                    title="窥探天机 (获取提示)"
+                >
+                    <span className="text-lg">🔮</span> <span className="hidden sm:inline">天机</span>
+                </button>
              </div>
           </div>
         </div>
