@@ -20,7 +20,7 @@ const PRESETS = [
     {
         name: "Google Gemini (OpenAI Compat)",
         baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/",
-        model: "gemini-2.0-flash"
+        model: "gemini-2.5-flash"
     },
     {
         name: "DeepSeek (深度求索)",

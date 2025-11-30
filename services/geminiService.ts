@@ -14,10 +14,10 @@ const SYSTEM_INSTRUCTION = `
 必须严格区分【战斗资源】与【境界进度】：
 
 1.  **资源 (Resources - 消耗品)**:
-    *   **精 (HP/Health)**: 生命值。受伤扣除，归零死亡。
+    *   **精 (HP/Health)**: 生命值。受伤扣除，归零死亡。当前值/最大值需同步维护。
     *   **气 (MP/Mana)**: 施法蓝条。释放法术、催动法宝消耗。打坐可恢复。
     *   **神 (SP/Soul)**: 神识精力。探查、炼丹、炼器消耗。耗尽昏迷。
-    *   **灵石 (Spirit Stones)**: 通用货币。**必须**存储在 \`spiritStones\` 数值字段中。**严禁**将灵石放入 \`inventory\` 数组（例如禁止 \`['灵石*100']\`）。
+    *   **灵石 (Spirit Stones)**: 通用货币。**必须**存储在 \`spiritStones\` 数值字段中。**严禁**将灵石放入 \`inventory\` 数组。
     
 2.  **进度 (Progress - 经验条)**:
     *   **灵道 (Cultivation)**: \`cultivation\` / \`maxCultivation\`。满值可尝试突破灵道境界 (\`realm\`)。
@@ -28,12 +28,12 @@ const SYSTEM_INSTRUCTION = `
     *   肉身突破受限于**资源**（气血/灵石）和**根骨**。
     *   **联动**: 灵道突破成功，应给予少量肉身经验；肉身突破成功，应大幅增加气血上限(\`maxHealth\`)。
 
-**【物品与鉴定系统】 (NEW)**
-当玩家获得新物品（法宝、功法、奇物）时，如果它是**非凡品**，你必须在 \`characterUpdate.itemKnowledge\` 中生成其元数据：
-*   **rank**: 品阶 (e.g. "黄阶上品", "玄阶中品")
-*   **effects**: 具体数值效果 (e.g. "灵力回复速度+10%", "造成火属性伤害")
-*   **requirements**: 使用限制 (e.g. "需筑基期", "需火灵根")
-*   **description**: 物品的背景故事或外观描述。
+**【物品与背包管理铁律】 (CRITICAL)**
+1.  **全量返回**: 当 \`inventory\` (背包)、\`techniques\` (功法)、\`statusEffects\` (状态) 发生任何变动时，必须返回**变动后的完整列表**。
+    *   *错误示例*: 玩家吃掉丹药，只返回 \`[]\`。
+    *   *正确示例*: 原有 \`["丹药", "剑"]\`，吃掉丹药后，返回 \`inventory: ["剑"]\`。
+2.  **新增物品**: 将新物品加入列表。
+3.  **鉴定系统**: 当玩家获得非凡品时，在 \`characterUpdate.itemKnowledge\` 中生成其元数据。
 
 **【状态更新检查清单】**
 每次回复必须遍历并计算：
@@ -51,16 +51,17 @@ JSON 结构示例：
 {
   "narrative": "剧情...",
   "characterUpdate": { 
-     "health": 90, "mana": 40, "soul": 45,
+     "health": 90, "maxHealth": 100, // 若上限未变可省略 maxHealth，但若突破必须返回
+     "mana": 40, "soul": 45,
      "cultivation": 1200, "bodyPractice": 300,
      "spiritStones": 250, 
      "attributes": { "根骨": 12, "道心": 15 },
      "equipment": { "weapon": "青云剑", "armor": "玄铁甲", "relic": "摄魂铃" },
-     "techniques": ["引气诀", "烈火掌"],
-     "inventory": ["凝气丹", "妖兽皮"], // 注意：这里不要放灵石
+     "techniques": ["引气诀", "烈火掌"], // 返回完整列表
+     "inventory": ["凝气丹", "妖兽皮"], // 返回完整列表，不要放灵石
      "itemKnowledge": {
-        "青干剑": { 
-            "name": "青干剑", "type": "weapon", "rank": "黄阶上品", 
+        "青云剑": { 
+            "name": "青云剑", "type": "weapon", "rank": "黄阶上品", 
             "effects": ["锋利度+10", "御剑消耗减少"], "requirements": ["练气三层"], 
             "description": "采五金之精打造..." 
         }
@@ -136,27 +137,28 @@ const cleanAndParseJSON = (rawContent: string): GameResponse => {
         fallbackResponse.gameOver = true;
     }
 
-    // 提取数值
-    const extractInt = (key: string) => {
+    // 提取数值 (核心修复: 仅当匹配成功时才赋值，避免 undefined 覆盖旧值)
+    const extractInt = (key: string, targetObj: any) => {
         const match = content.match(new RegExp(`"${key}"\\s*:\\s*(\\d+)`));
-        if (match) return parseInt(match[1]);
-        return undefined;
+        if (match) {
+            targetObj[key] = parseInt(match[1]);
+        }
     };
 
     const cu = fallbackResponse.characterUpdate;
-    cu.health = extractInt("health");
-    cu.maxHealth = extractInt("maxHealth");
-    cu.mana = extractInt("mana");
-    cu.maxMana = extractInt("maxMana");
-    cu.soul = extractInt("soul");
-    cu.maxSoul = extractInt("maxSoul");
+    extractInt("health", cu);
+    extractInt("maxHealth", cu);
+    extractInt("mana", cu);
+    extractInt("maxMana", cu);
+    extractInt("soul", cu);
+    extractInt("maxSoul", cu);
     
-    cu.cultivation = extractInt("cultivation");
-    cu.maxCultivation = extractInt("maxCultivation");
-    cu.bodyPractice = extractInt("bodyPractice");
-    cu.maxBodyPractice = extractInt("maxBodyPractice");
+    extractInt("cultivation", cu);
+    extractInt("maxCultivation", cu);
+    extractInt("bodyPractice", cu);
+    extractInt("maxBodyPractice", cu);
     
-    cu.spiritStones = extractInt("spiritStones");
+    extractInt("spiritStones", cu);
 
     // 提取属性
     const attrKeys = ["根骨", "悟性", "身法", "机缘", "魅力", "道心"];
@@ -196,7 +198,7 @@ const callAI = async (
                 model: model,
                 messages: messages,
                 temperature: 0.8, 
-                max_tokens: 4000
+                max_tokens: 20000
             })
         });
 
@@ -264,7 +266,7 @@ export const compressStory = async (
     旧记忆：${existingSummary || "无"}
     新对话：${dialogue}
     
-    输出：一段不超过500字的第三人称摘要，保留关键剧情、获得物品和人际关系。
+    输出：一段不超过700字的第三人称摘要，保留关键剧情、获得物品和人际关系。确保高度浓缩。
     `;
 
     const messages: ChatMessage[] = [
@@ -321,7 +323,8 @@ export const sendPlayerAction = async (
 
     const memoryContext = storySummary ? `【前情提要】\n${storySummary}\n----------------` : "";
 
-    const recentHistory = history.slice(-30).map(h => ({ 
+    // 缩减最近的对话记录长度，因为我们有更频繁的记忆压缩。保留最近 10 条足够保证连续性。
+    const recentHistory = history.slice(-10).map(h => ({ 
         role: (h.role as string) === 'model' ? 'assistant' : h.role, 
         content: h.content 
     } as ChatMessage));
