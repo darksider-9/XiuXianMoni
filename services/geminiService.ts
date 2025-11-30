@@ -17,6 +17,7 @@ const SYSTEM_INSTRUCTION = `
     *   **精 (HP/Health)**: 生命值。受伤扣除，归零死亡。
     *   **气 (MP/Mana)**: 施法蓝条。释放法术、催动法宝消耗。打坐可恢复。
     *   **神 (SP/Soul)**: 神识精力。探查、炼丹、炼器消耗。耗尽昏迷。
+    *   **灵石 (Spirit Stones)**: 通用货币。**必须**存储在 \`spiritStones\` 数值字段中。**严禁**将灵石放入 \`inventory\` 数组（例如禁止 \`['灵石*100']\`）。
     
 2.  **进度 (Progress - 经验条)**:
     *   **灵道 (Cultivation)**: \`cultivation\` / \`maxCultivation\`。满值可尝试突破灵道境界 (\`realm\`)。
@@ -39,7 +40,7 @@ const SYSTEM_INSTRUCTION = `
 1.  **资源变动**: 战斗是否扣了气血(\`health\`)？施法是否扣了灵力(\`mana\`)？探索是否扣了神识(\`soul\`)？
 2.  **进度积累**: 修炼/战斗是否增加了修为(\`cultivation\`)或肉身经验(\`bodyPractice\`)？
 3.  **属性判定**: 根骨/悟性/机缘/魅力/道心 是否因事件变化？
-4.  **外物**: 灵石、背包、装备、功法变动。
+4.  **外物**: **灵石必须归入数值栏**。背包、装备、功法变动。
 
 **【输出格式要求】 (JSON ONLY)**
 *   NO Markdown. NO Preamble.
@@ -52,9 +53,11 @@ JSON 结构示例：
   "characterUpdate": { 
      "health": 90, "mana": 40, "soul": 45,
      "cultivation": 1200, "bodyPractice": 300,
+     "spiritStones": 250, 
      "attributes": { "根骨": 12, "道心": 15 },
      "equipment": { "weapon": "青云剑", "armor": "玄铁甲", "relic": "摄魂铃" },
      "techniques": ["引气诀", "烈火掌"],
+     "inventory": ["凝气丹", "妖兽皮"], // 注意：这里不要放灵石
      "itemKnowledge": {
         "青干剑": { 
             "name": "青干剑", "type": "weapon", "rank": "黄阶上品", 
@@ -231,9 +234,9 @@ export const initializeGame = async (
     
     let userContent = "";
     if (locationName === "Custom") {
-        userContent = `初始化游戏。自定义出生设定：${customPrompt}。请生成开局剧情并初始化属性。`;
+        userContent = `初始化游戏。自定义出生设定：${customPrompt}。请生成开局剧情并初始化属性。注意：灵石加成必须写入 spiritStones 字段，不可放入 inventory。`;
     } else {
-        userContent = `初始化游戏。出生地：${locationName}。加成：${locationBonus}。请生成开局剧情并初始化属性。`;
+        userContent = `初始化游戏。出生地：${locationName}。加成：${locationBonus}。请生成开局剧情并初始化属性。注意：灵石加成必须写入 spiritStones 字段，不可放入 inventory。`;
     }
 
     const messages: ChatMessage[] = [

@@ -315,7 +315,32 @@ const App: React.FC = () => {
         }
         
         const sanitizedUpdate = { ...update };
-        if (sanitizedUpdate.inventory) sanitizedUpdate.inventory = sanitizeStringArray(sanitizedUpdate.inventory);
+
+        // Spirit Stone Fix: extract from inventory if AI put it there by mistake
+        let extractedStones = 0;
+        if (sanitizedUpdate.inventory) {
+            sanitizedUpdate.inventory = sanitizeStringArray(sanitizedUpdate.inventory).filter(item => {
+                if (typeof item === 'string' && (item.includes('灵石') || item.includes('Spirit Stone'))) {
+                     const match = item.match(/\d+/);
+                     extractedStones += match ? parseInt(match[0]) : 1;
+                     return false; // Remove from inventory
+                }
+                return true;
+            });
+        }
+        
+        // Merge spirit stones logic
+        const prevStones = prev.spiritStones || 0;
+        const updateStones = sanitizedUpdate.spiritStones !== undefined ? sanitizedUpdate.spiritStones : prevStones;
+        // NOTE: Usually AI returns total amount in spiritStones field. 
+        // If it extracted from inventory, we add it to the updateStones which might be just 'prevStones' if not updated explicitly.
+        // However, if AI returned BOTH spiritStones: 100 AND inventory: ["灵石*100"], we should be careful not to double count.
+        // But usually "missing spirit stones" means spiritStones is 0, inventory has it. 
+        // So we add extractedStones to the final result.
+        if (extractedStones > 0) {
+            sanitizedUpdate.spiritStones = (sanitizedUpdate.spiritStones ?? prevStones) + extractedStones;
+        }
+
         if (sanitizedUpdate.techniques) sanitizedUpdate.techniques = sanitizeStringArray(sanitizedUpdate.techniques);
         if (sanitizedUpdate.statusEffects) sanitizedUpdate.statusEffects = sanitizeStringArray(sanitizedUpdate.statusEffects);
 
